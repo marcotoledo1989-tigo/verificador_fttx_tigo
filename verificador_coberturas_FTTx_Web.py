@@ -118,15 +118,9 @@ if df_raw is not None:
             cols_2 = ['ID_Mufa', 'ANÁLISIS KPI', 'Ocupados', 'Tipo_Mufa', 'Fibra']
             st.dataframe(res[[c for c in cols_2 if c in res.columns]], use_container_width=True)
 
-
 # Pie de página
 st.sidebar.markdown("---")
 st.sidebar.markdown("<p style='text-align: center; color: white;'>Created By V1.0 - Marco Toledo</p>", unsafe_allow_html=True)
-
-
-
-
-
 
 
 
