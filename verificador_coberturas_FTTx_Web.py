@@ -11,7 +11,7 @@ st.set_page_config(page_title="Tigo FTTX - Consultor V2", layout="wide")
 
 # --- 2. LOGO TIGO Y ESTILOS (SOLUCIÓN DEFINITIVA LOGO) ---
 # Usamos codificación base64 para embeber el logo y que no dependa de enlaces externos.
-logo_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/4/40/Tigo_logo.svg/512px-Tigo_logo.svg.png"
+logo_url = "https://upload.wikimedia.org/wikipedia/commons/b/b0/Tigo.svg"
 
 # Estilos CSS personalizados para la interfaz Tigo
 st.markdown("""
@@ -69,7 +69,7 @@ if df_raw is not None:
     # Coordenadas por defecto (centro de Santiago)
     lat_user = st.sidebar.number_input("Latitud", value=-33.574263, format="%.6f")
     lon_user = st.sidebar.number_input("Longitud", value=-70.559033, format="%.6f")
-    radio = st.sidebar.slider("Radio de búsqueda (m)", 100, 2000, 500)
+    radio = st.sidebar.slider("Radio de búsqueda (m)", 50, 2000, 500)
 
     # Botón para forzar el centrado del mapa si hay desfase
     btn_centrar = st.sidebar.button("🎯 ACTUALIZAR UBICACIÓN")
@@ -105,7 +105,7 @@ if df_raw is not None:
     # --- 6. DISEÑO DE INTERFAZ APILADO (MAPA ARRIBA, TABLA ABAJO) ---
 
     # PARTE SUPERIOR: EL MAPA (Ocupando todo el ancho)
-    st.subheader("📍 Mapa de Red (Totalmente Expandido)")
+    st.subheader("📍 Mapa de Red")
 
     # key dinámico para forzar el renderizado y eliminar el desfase
     map_key = f"mapa_{lat_user}_{lon_user}_{btn_centrar}_{radio}"
@@ -136,7 +136,7 @@ if df_raw is not None:
 
     # PARTE INFERIOR: LA TABLA (Ocupando todo el ancho)
     st.markdown("---") # Línea separadora
-    st.subheader("📊 Listado Detallado (Como Escritorio)")
+    st.subheader("📊 Listado Detallado")
 
     if not res.empty:
         # Definir texto del semáforo
