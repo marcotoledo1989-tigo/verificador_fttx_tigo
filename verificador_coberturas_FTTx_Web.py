@@ -23,21 +23,35 @@ st.markdown("""
 
 st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/b/b0/Tigo.svg", width=150)
 
-# --- 2. BÚSQUEDA DE UBICACIÓN ---
-st.sidebar.header("🔍 Ubicación de Consulta")
-with st.sidebar.expander("Búsqueda por Dirección", expanded=True):
-    calle = st.text_input("Calle")
-    altura = st.text_input("Altura")
-    comuna = st.text_input("Comuna", value="Santiago")
-    if st.button("Ir a la ubicación"):
-        geolocator = Nominatim(user_agent="tigo_tool_chile")
-        location = geolocator.geocode(f"{calle} {altura}, {comuna}, Chile")
-        if location:
-            st.session_state.lat = location.latitude
-            st.session_state.lon = location.longitude
-            st.sidebar.success("Ubicación fijada")
-        else:
-            st.sidebar.error("No encontrada")
+# --- 2. PANEL DE BÚSQUEDA (COORDENADAS Y DIRECCIÓN) ---
+st.sidebar.header("📍 Ubicación de Consulta")
+
+# Opción A: Coordenadas Manuales (Siempre visible)
+st.sidebar.subheader("Coordenadas Manuales")
+lat_input = st.sidebar.number_input("Latitud", value=st.session_state.lat, format="%.6f")
+lon_input = st.sidebar.number_input("Longitud", value=st.session_state.lon, format="%.6f")
+
+if st.sidebar.button("Actualizar por Coordenadas"):
+    st.session_state.lat = lat_input
+    st.session_state.lon = lon_input
+
+st.sidebar.markdown("---")
+
+# Opción B: Búsqueda por Dirección
+st.sidebar.subheader("Búsqueda por Dirección")
+calle = st.sidebar.text_input("Nombre Calle")
+altura = st.sidebar.text_input("Altura")
+comuna = st.sidebar.text_input("Comuna", value="Santiago")
+
+if st.sidebar.button("Buscar Dirección"):
+    geolocator = Nominatim(user_agent="tigo_tool_chile")
+    location = geolocator.geocode(f"{calle} {altura}, {comuna}, Chile")
+    if location:
+        st.session_state.lat = location.latitude
+        st.session_state.lon = location.longitude
+        st.sidebar.success("Ubicación fijada")
+    else:
+        st.sidebar.error("No se encontró la dirección")
 
 radio = st.sidebar.slider("Radio de búsqueda (m)", 50, 5000, 1000)
 
