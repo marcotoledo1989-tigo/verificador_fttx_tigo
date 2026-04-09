@@ -3,4 +3,6 @@ pandas
 numpy
 folium
 streamlit-folium
+geopy
 openpyxl
+pyxlsb
