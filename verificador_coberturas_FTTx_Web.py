@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import folium
 from streamlit_folium import st_folium
-import streamlit_authenticator as stauth
 from geopy.geocoders import Nominatim # Para búsqueda por dirección
 
 # --- 1. CONFIGURACIÓN Y SEGURIDAD ---
