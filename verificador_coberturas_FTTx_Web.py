@@ -3,120 +3,115 @@ import pandas as pd
 import numpy as np
 import folium
 from streamlit_folium import st_folium
-from geopy.geocoders import Nominatim # Para búsqueda por dirección
+from geopy.geocoders import Nominatim
 
-# --- 1. CONFIGURACIÓN Y SEGURIDAD ---
+# --- 1. CONFIGURACIÓN Y PERSISTENCIA ---
 st.set_page_config(page_title="Tigo Network Tool Pro", layout="wide")
 
-# (Opcional: Aquí puedes reinsertar el bloque de autenticator si lo requieres)
+# Mantener la ubicación fija en la sesión para que no regrese al centro
+if 'lat' not in st.session_state:
+   st.session_state.lat = -33.4372
+if 'lon' not in st.session_state:
+   st.session_state.lon = -70.6506
 
 st.markdown("""
-    <style>
-        [data-testid="stSidebar"] { background-color: #0033ab; }
-        [data-testid="stSidebar"] .stMarkdown p, [data-testid="stSidebar"] label { color: white !important; font-weight: bold; }
-        .stTitle { color: #0033ab; font-weight: bold; }
-    </style>
-    """, unsafe_allow_html=True)
+   <style>
+       [data-testid="stSidebar"] { background-color: #0033ab; }
+       [data-testid="stSidebar"] .stMarkdown p, [data-testid="stSidebar"] label { color: white !important; font-weight: bold; }
+       .stTitle { color: #0033ab; font-weight: bold; }
+   </style>
+   """, unsafe_allow_html=True)
 
 st.sidebar.image("https://upload.wikimedia.org/wikipedia/commons/b/b0/Tigo.svg", width=150)
 
-# --- 2. ENTRADA DE DATOS (BÚSQUEDA) ---
-st.sidebar.header("🔍 Entrada de Ubicación")
-metodo_busqueda = st.sidebar.radio("Método:", ["Dirección Manual", "Coordenadas"])
+# --- 2. BÚSQUEDA DE DIRECCIÓN ---
+st.sidebar.header("🔍 Ubicación de Consulta")
+with st.sidebar.expander("Búsqueda por Dirección", expanded=True):
+   calle = st.text_input("Calle")
+   altura = st.text_input("Altura")
+   comuna = st.text_input("Comuna", value="Santiago")
+   if st.button("Ir a la ubicación"):
+       geolocator = Nominatim(user_agent="tigo_tool_chile")
+       location = geolocator.geocode(f"{calle} {altura}, {comuna}, Chile")
+       if location:
+           st.session_state.lat = location.latitude
+           st.session_state.lon = location.longitude
+           st.success("Ubicación fijada")
+       else:
+           st.error("No encontrada")
 
-lat_user, lon_user = -33.4372, -70.6506 # Default Santiago
-
-if metodo_busqueda == "Dirección Manual":
-    calle = st.sidebar.text_input("Nombre Calle")
-    altura = st.sidebar.text_input("Altura (Número)")
-    comuna = st.sidebar.text_input("Comuna", value="Santiago")
-    if st.sidebar.button("Buscar Dirección"):
-        try:
-            geolocator = Nominatim(user_agent="tigo_tool")
-            location = geolocator.geocode(f"{calle} {altura}, {comuna}, Chile")
-            if location:
-                lat_user, lon_user = location.latitude, location.longitude
-                st.sidebar.success("Ubicación encontrada")
-            else:
-                st.sidebar.error("Dirección no hallada")
-        except:
-            st.sidebar.error("Error en servicio de mapas")
-else:
-    lat_user = st.sidebar.number_input("Latitud", value=lat_user, format="%.6f")
-    lon_user = st.sidebar.number_input("Longitud", value=lon_user, format="%.6f")
+with st.sidebar.expander("Coordenadas Manuales"):
+   st.session_state.lat = st.number_input("Latitud", value=st.session_state.lat, format="%.6f")
+   st.session_state.lon = st.number_input("Longitud", value=st.session_state.lon, format="%.6f")
 
 radio = st.sidebar.slider("Radio de búsqueda (m)", 100, 3000, 1000)
 
-# --- 3. CARGA Y PROCESAMIENTO ---
+# --- 3. CARGA Y UNIFICACIÓN (MUFAS FOTO 9) ---
 st.sidebar.header("📁 Inventarios")
-file_fttx = st.sidebar.file_uploader("Base FTTx (CTOs)", type=["xlsx", "xlsb"])
-file_p2p = st.sidebar.file_uploader("Base P2P (Mufas)", type=["xlsx", "xlsb"])
-
-modo = st.sidebar.selectbox("Consultar:", ["FTTx (Residencial)", "P2P (Empresas/Mufas)"])
+file_fttx = st.sidebar.file_uploader("Base FTTx", type=["xlsx", "xlsb"])
+file_p2p = st.sidebar.file_uploader("Base P2P", type=["xlsx", "xlsb"])
+modo = st.sidebar.radio("Solución:", ["FTTx (Residencial)", "P2P (Empresas/Mufas)"])
 
 @st.cache_data
-def process_data(file, tipo):
-    if file is None: return None
-    df = pd.read_excel(file)
-    df.columns = df.columns.str.strip()
+def load_and_clean(file, tipo):
+   if file is None: return None
+   df = pd.read_excel(file)
+   df.columns = df.columns.str.strip()
 
-    if tipo == "FTTx":
-        # Evitar completar vacíos con 0 para no saturar erróneamente
-        df['Cantidad de fibras libres'] = pd.to_numeric(df['Cantidad de fibras libres'], errors='coerce')
+   if tipo == "P2P":
+       # Unificamos por ID_Mufa para que no se repitan filas 
+       # Concatenamos fibras y cables si son distintos
+       agg_rules = {col: 'first' for col in df.columns if col != 'ID_Mufa'}
+       if 'Fibra' in df.columns: agg_rules['Fibra'] = lambda x: ', '.join(x.astype(str).unique())
+       if 'Cable_Origen' in df.columns: agg_rules['Cable_Origen'] = lambda x: ', '.join(x.astype(str).unique())
+       df = df.groupby('ID_Mufa').agg(agg_rules).reset_index()
+   return df
 
-    elif tipo == "P2P":
-        # UNIFICACIÓN DE MUFAS POR ID
-        # Agrupamos por ID_Mufa y unimos los valores de fibras/cables si hay duplicados
-        df = df.groupby('ID_Mufa').agg(lambda x: x.iloc[0] if x.nunique() <= 1 else ', '.join(x.astype(str))).reset_index()
-
-    return df
-
-df_raw = process_data(file_fttx, "FTTx") if modo == "FTTx (Residencial)" else process_data(file_p2p, "P2P")
+df_raw = load_and_clean(file_fttx, "FTTx") if modo == "FTTx (Residencial)" else load_and_clean(file_p2p, "P2P")
 
 if df_raw is not None:
-    # Filtrado Geográfico
-    df_raw['Lat'] = pd.to_numeric(df_raw['Lat'], errors='coerce')
-    df_raw['Lon'] = pd.to_numeric(df_raw['Lon'], errors='coerce')
-    df_raw = df_raw.dropna(subset=['Lat', 'Lon'])
-    df_raw["Distancia_m"] = (np.sqrt((df_raw["Lat"]-lat_user)**2 + (df_raw["Lon"]-lon_user)**2) * 111320).round(1)
-    res = df_raw[df_raw["Distancia_m"] <= radio].copy()
+   # Filtrado Geográfico
+   df_raw['Lat'] = pd.to_numeric(df_raw['Lat'], errors='coerce')
+   df_raw['Lon'] = pd.to_numeric(df_raw['Lon'], errors='coerce')
+   df_raw = df_raw.dropna(subset=['Lat', 'Lon'])
+   df_raw["Distancia_m"] = (np.sqrt((df_raw["Lat"]-st.session_state.lat)**2 + (df_raw["Lon"]-st.session_state.lon)**2) * 111320).round(1)
+   res = df_raw[df_raw["Distancia_m"] <= radio].copy()
 
-    # --- 4. MAPA ---
-    st.title(f" Verificador {modo}")
-    m = folium.Map(location=[lat_user, lon_user], zoom_start=17)
-    folium.Marker([lat_user, lon_user], icon=folium.Icon(color='blue', icon='home')).add_to(m)
+   # --- 4. MAPA ---
+   st.title(f" Verificador {modo} Tigo")
+   m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=18)
+   folium.Marker([st.session_state.lat, st.session_state.lon], tooltip="Consulta", icon=folium.Icon(color='red', icon='info-sign')).add_to(m)
 
-    for _, row in res.iterrows():
-        if modo == "FTTx (Residencial)":
-            val = row['Cantidad de fibras libres']
-            # Semáforo: Gris para vacíos, Rojo 0, Naranja 1, Verde >1
-            color = "gray" if pd.isna(val) else ("red" if val == 0 else ("orange" if val == 1 else "green"))
-            folium.CircleMarker([row["Lat"], row["Lon"]], radius=9, color=color, fill=True).add_to(m)
-        else:
-            kpi = row.get('ANÁLISIS', '')
-            icon_c = 'green' if 'USAR' in str(kpi) else 'red'
-            folium.Marker([row["Lat"], row["Lon"]], icon=folium.Icon(color=icon_c, icon='settings')).add_to(m)
+   for _, row in res.iterrows():
+       if modo == "FTTx (Residencial)":
+           libres = pd.to_numeric(row.get('Cantidad de fibras libres'), errors='coerce')
+           color = "gray" if pd.isna(libres) else ("red" if libres == 0 else ("orange" if libres == 1 else "green"))
+           folium.CircleMarker([row["Lat"], row["Lon"]], radius=10, color=color, fill=True).add_to(m)
+       else:
+           kpi = str(row.get('ANÁLISIS', ''))
+           color_mufa = "green" if "USAR" in kpi else "cadetblue"
+           folium.Marker([row["Lat"], row["Lon"]], icon=folium.Icon(color=color_mufa, icon='share-alt')).add_to(m)
 
-    st_folium(m, width="100%", height=500)
+   st_folium(m, width="100%", height=500, key=f"map_{st.session_state.lat}")
 
-    # --- 5. DETALLE ESTILO ESCRITORIO ---
-    st.markdown("---")
-    if modo == "FTTx (Residencial)":
-        st.subheader(f"📊 FTTX: {len(res)} puntos analizados")
-        def set_semaforo(x):
-            if pd.isna(x): return "⚪ SIN INFO"
-            return "🔴 SAT" if x == 0 else ("🟡 CRI" if x == 1 else "✅ OK")
-        res['ESTADO'] = res['Cantidad de fibras libres'].apply(set_semaforo)
-        st.dataframe(res[['ESTADO', 'Propietario', 'Distancia_m', 'Nombre_Calle', 'Nombre_CTO', 'Cantidad de fibras libres']], use_container_width=True)
-    else:
-        st.subheader(f"📊 Mostrando {len(res)} mufas UNIFICADAS")
-        col1, col2 = st.columns(2)
-        with col1: # Detalle técnico (Foto 2)
-            cols_1 = ['ID_Mufa', 'Distancia_m', 'Nombre_Mufa', 'Terminal de fibra óptica.Función', 'Terminal de fibra óptica.Instalación', 'Terminal de fibra óptica.Situación']
-            st.dataframe(res[[c for c in cols_1 if c in res.columns]], use_container_width=True)
-        with col2: # Análisis KPI (Foto 1)
-            cols_2 = ['ID_Mufa', 'ANÁLISIS KPI', 'Ocupados', 'Tipo_Mufa', 'Fibra']
-            st.dataframe(res[[c for c in cols_2 if c in res.columns]], use_container_width=True)
+   # --- 5. TABLAS (FOTOS 4, 5 Y 7) ---
+   st.markdown("---")
+   if modo == "FTTx (Residencial)":
+       st.subheader(f"📊 Detalle CTOs ({len(res)} puntos)")
+       res['ESTADO'] = res['Cantidad de fibras libres'].apply(lambda x: "⚪ SIN INFO" if pd.isna(x) else ("🔴 SATURADO" if x == 0 else ("🟡 CRÍTICO" if x == 1 else "✅ OK")))
+       st.dataframe(res[['ESTADO', 'Propietario', 'Distancia_m', 'Nombre_Calle', 'Nombre_CTO', 'Cantidad de fibras libres']], use_container_width=True)
+   else:
+       st.subheader(f"📊 Detalle Mufas Unificadas ({len(res)})")
+       col1, col2 = st.columns([1.5, 1])
+       with col1: # Columnas según Foto 5 y 9
+           cols_tec = ['ID_Mufa', 'Distancia_m', 'Propietario', 'Nombre_Mufa', 'Terminal de fibra óptica.Función', 'Terminal de fibra óptica.Instalación', 'Terminal de fibra óptica.Situación', 'Cable_Origen']
+           st.dataframe(res[[c for c in cols_tec if c in res.columns]], use_container_width=True)
+       with col2: # Columnas según Foto 4 y 7
+           cols_kpi = ['ID_Mufa', 'ANÁLISIS KPI', 'Ocupados', 'Tipo_Mufa', 'Fibra', 'Consulta de Conexiones en TFO.Cuenta de la origen']
+           st.dataframe(res[[c for c in cols_kpi if c in res.columns]], use_container_width=True)
+
+else:
+   st.info("Sube los archivos para activar el mapa y el análisis.")
 
 # Pie de página
 st.sidebar.markdown("---")
